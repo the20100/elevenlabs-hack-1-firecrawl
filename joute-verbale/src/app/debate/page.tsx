@@ -1,7 +1,14 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useConversation } from "@11labs/react";
 import { buildDebatePrompt, type DebateMode } from "@/lib/debate-prompt";
 import { getRandomSide, getRandomTopic } from "@/lib/topics";
@@ -12,12 +19,10 @@ function DebateContent() {
   const topicParam = searchParams.get("topic");
   const sideParam = searchParams.get("side") as "FOR" | "AGAINST" | null;
 
-  // Determine topic and side based on mode
   const { topic, userSide } = useMemo(() => {
     if (mode === "champion" && topicParam && sideParam) {
       return { topic: topicParam, userSide: sideParam };
     }
-    // Roulette or Switcheroo: random topic and side
     const randomTopic = getRandomTopic();
     return { topic: randomTopic.motion, userSide: getRandomSide() };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -27,6 +32,7 @@ function DebateContent() {
   const [messages, setMessages] = useState<
     { role: "user" | "ai"; text: string }[]
   >([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [scores, setScores] = useState<{
     eloquence: number;
     evidence: number;
@@ -42,6 +48,7 @@ function DebateContent() {
 
   const firecrawlSearch = useCallback(
     async (parameters: { query: string }): Promise<string> => {
+      setIsSearching(true);
       try {
         const res = await fetch("/api/firecrawl-search", {
           method: "POST",
@@ -53,6 +60,8 @@ function DebateContent() {
         return JSON.stringify(data.results);
       } catch {
         return "Search temporarily unavailable";
+      } finally {
+        setIsSearching(false);
       }
     },
     []
@@ -68,7 +77,6 @@ function DebateContent() {
         { role: props.source, text: props.message },
       ]);
 
-      // Check for scores JSON in AI messages
       if (props.source === "ai") {
         const scoreMatch = props.message.match(
           /SCORES_JSON:(\{[^}]+\})/
@@ -88,10 +96,7 @@ function DebateContent() {
   });
 
   const handleStart = useCallback(async () => {
-    if (!agentId) {
-      console.error("No agent ID configured");
-      return;
-    }
+    if (!agentId) return;
 
     const prompt = buildDebatePrompt({ topic, userSide, mode });
 
@@ -113,7 +118,6 @@ function DebateContent() {
     await conversation.endSession();
   }, [conversation]);
 
-  // Determine current round from message count (rough heuristic)
   const currentRound = Math.min(
     Math.floor(messages.filter((m) => m.role === "ai").length / 1) + 1,
     3
@@ -173,7 +177,7 @@ function DebateContent() {
         </div>
       )}
 
-      {/* Voice status */}
+      {/* Voice interaction area */}
       <div className="flex flex-col items-center gap-6 my-auto">
         {!started ? (
           <button
@@ -184,32 +188,75 @@ function DebateContent() {
             <span className="text-gold text-lg font-semibold group-hover:text-gold-light">
               Start
             </span>
-            {/* Pulse ring */}
             <span className="absolute inset-0 rounded-full border-2 border-gold/20 animate-ping" />
           </button>
         ) : (
           <div className="flex flex-col items-center gap-4">
-            {/* Speaking indicator */}
-            <div
-              className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${
-                conversation.isSpeaking
-                  ? "bg-gold/20 border-2 border-gold animate-pulse"
-                  : "bg-foreground/5 border-2 border-foreground/20"
-              }`}
-            >
-              <span className="text-sm text-foreground/60">
-                {conversation.status === "connecting"
-                  ? "Connecting..."
-                  : conversation.isSpeaking
-                    ? "AI Speaking"
-                    : "Listening..."}
-              </span>
+            {/* Waveform / Speaking indicator */}
+            <div className="relative w-32 h-32 rounded-full flex items-center justify-center">
+              {conversation.isSpeaking ? (
+                <>
+                  <div className="absolute inset-0 rounded-full bg-gold/10 border-2 border-gold/50" />
+                  <div className="flex items-end gap-1 h-10">
+                    {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                      <div
+                        key={i}
+                        className="w-1.5 bg-gold rounded-full animate-waveform"
+                        style={{
+                          height: `${12 + Math.random() * 28}px`,
+                          animationDelay: `${i * 0.1}s`,
+                          animationDuration: `${0.5 + Math.random() * 0.5}s`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="absolute inset-0 rounded-full bg-foreground/5 border-2 border-foreground/20" />
+                  <div className="flex flex-col items-center">
+                    {/* Mic icon */}
+                    <svg
+                      className="w-8 h-8 text-foreground/40"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={1.5}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+                      />
+                    </svg>
+                    <span className="text-xs text-foreground/40 mt-1">
+                      {conversation.status === "connecting"
+                        ? "Connecting..."
+                        : "Your turn"}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Research indicator */}
-            {conversation.isSpeaking && (
-              <div className="text-xs text-gold/60 animate-pulse">
-                Powered by Firecrawl Search
+            {/* Researching indicator */}
+            {isSearching && (
+              <div className="flex items-center gap-2 text-sm text-gold/80 animate-fade-in">
+                <div className="flex gap-0.5">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-gold animate-bounce"
+                    style={{ animationDelay: "0s" }}
+                  />
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-gold animate-bounce"
+                    style={{ animationDelay: "0.15s" }}
+                  />
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-gold animate-bounce"
+                    style={{ animationDelay: "0.3s" }}
+                  />
+                </div>
+                Researching with Firecrawl...
               </div>
             )}
 
@@ -272,40 +319,86 @@ function ScoreScreen({
   topic: string;
   userSide: string;
 }) {
+  const [revealed, setRevealed] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Delay reveal for dramatic effect
+    const timer = setTimeout(() => setRevealed(true), 300);
+    return () => clearTimeout(timer);
+  }, []);
+
   const dimensions = [
-    { name: "Eloquence", score: scores.eloquence, emoji: "🎭" },
-    { name: "Evidence", score: scores.evidence, emoji: "📊" },
-    { name: "Resilience", score: scores.resilience, emoji: "🛡️" },
-    { name: "Logic", score: scores.logic, emoji: "🧠" },
-    { name: "Wit", score: scores.wit, emoji: "⚡" },
+    { name: "Eloquence", score: scores.eloquence },
+    { name: "Evidence", score: scores.evidence },
+    { name: "Resilience", score: scores.resilience },
+    { name: "Logic", score: scores.logic },
+    { name: "Wit", score: scores.wit },
   ];
+
+  const handleShare = async () => {
+    const text = `I scored ${scores.total}/100 (${scores.title}) debating "${topic}" on Joute Verbale!\n\n"${scores.verdict}"\n\nThink you can beat me? Try it yourself: #ElevenHacks #JouteVerbale`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ text });
+      } catch {
+        // User cancelled share
+      }
+    } else {
+      // Fallback: copy to clipboard
+      await navigator.clipboard.writeText(text);
+      setSharing(true);
+      setTimeout(() => setSharing(false), 2000);
+    }
+  };
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 py-8">
-      <div className="w-full max-w-md text-center">
+      <div ref={cardRef} className="w-full max-w-md text-center">
         <h2 className="text-sm uppercase tracking-widest text-gold/60 mb-2">
           Final Score
         </h2>
-        <div className="font-serif text-7xl font-bold text-gold mb-2">
-          {scores.total}
-          <span className="text-3xl text-foreground/30">/100</span>
-        </div>
-        <div className="text-xl font-semibold text-gold-light mb-6">
-          {scores.title}
+
+        {/* Big score number with pop animation */}
+        <div
+          className={`transition-all duration-600 ${
+            revealed
+              ? "opacity-100 animate-score-pop"
+              : "opacity-0 scale-50"
+          }`}
+        >
+          <div className="font-serif text-7xl font-bold text-gold mb-2">
+            {scores.total}
+            <span className="text-3xl text-foreground/30">/100</span>
+          </div>
+          <div className="text-xl font-semibold text-gold-light mb-6">
+            {scores.title}
+          </div>
         </div>
 
-        {/* Score breakdown */}
+        {/* Score breakdown with animated bars */}
         <div className="space-y-3 mb-8">
-          {dimensions.map((dim) => (
-            <div key={dim.name} className="flex items-center gap-3">
-              <span className="text-lg w-6">{dim.emoji}</span>
+          {dimensions.map((dim, i) => (
+            <div
+              key={dim.name}
+              className="flex items-center gap-3"
+              style={{
+                opacity: revealed ? 1 : 0,
+                transition: `opacity 0.4s ease ${0.5 + i * 0.15}s`,
+              }}
+            >
               <span className="text-sm text-foreground/60 w-24 text-left">
                 {dim.name}
               </span>
               <div className="flex-1 h-2 bg-foreground/10 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gold rounded-full transition-all duration-1000"
-                  style={{ width: `${(dim.score / 20) * 100}%` }}
+                  className="h-full bg-gold rounded-full"
+                  style={{
+                    width: revealed ? `${(dim.score / 20) * 100}%` : "0%",
+                    transition: `width 1.2s ease-out ${0.6 + i * 0.15}s`,
+                  }}
                 />
               </div>
               <span className="text-sm font-mono text-foreground/50 w-10 text-right">
@@ -316,8 +409,16 @@ function ScoreScreen({
         </div>
 
         {/* Verdict */}
-        <div className="border border-gold/20 rounded-xl bg-gold/5 p-4 mb-8">
-          <p className="text-foreground/80 italic">&ldquo;{scores.verdict}&rdquo;</p>
+        <div
+          className="border border-gold/20 rounded-xl bg-gold/5 p-4 mb-8"
+          style={{
+            opacity: revealed ? 1 : 0,
+            transition: "opacity 0.6s ease 1.5s",
+          }}
+        >
+          <p className="text-foreground/80 italic">
+            &ldquo;{scores.verdict}&rdquo;
+          </p>
         </div>
 
         {/* Topic reminder */}
@@ -326,13 +427,44 @@ function ScoreScreen({
         </div>
 
         {/* Actions */}
-        <div className="flex gap-3 justify-center">
+        <div
+          className="flex gap-3 justify-center"
+          style={{
+            opacity: revealed ? 1 : 0,
+            transition: "opacity 0.4s ease 1.8s",
+          }}
+        >
           <a
             href="/"
-            className="rounded-lg border border-gold/30 bg-gold/10 px-6 py-2.5 text-sm font-medium text-gold hover:bg-gold/20 transition-colors"
+            className="rounded-lg border border-foreground/20 bg-foreground/5 px-5 py-2.5 text-sm text-foreground/60 hover:bg-foreground/10 transition-colors"
           >
             New Debate
           </a>
+          <button
+            onClick={handleShare}
+            className="rounded-lg border border-gold/30 bg-gold/10 px-5 py-2.5 text-sm font-medium text-gold hover:bg-gold/20 transition-colors flex items-center gap-2"
+          >
+            {sharing ? (
+              "Copied!"
+            ) : (
+              <>
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"
+                  />
+                </svg>
+                Share
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>
