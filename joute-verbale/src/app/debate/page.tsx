@@ -74,6 +74,11 @@ function DebateContent() {
     onConnect: () => {
       console.log("ElevenLabs connected");
     },
+    onDisconnect: () => {
+      console.log("ElevenLabs disconnected");
+    },
+    onDebug: () => {},
+    onAudio: () => {},
     onMessage: (props: { message: string; source: "user" | "ai" }) => {
       setMessages((prev) => [
         ...prev,
