@@ -113,8 +113,9 @@ function DebateContent() {
       connectionType: "websocket",
       overrides: {
         agent: {
-          prompt: { prompt },
-          firstMessage: `Welcome to Joute Verbale. The motion before us today is: "${topic}". You will be arguing ${userSide}. You have 3 rounds to make your case. Take a moment to collect your thoughts... and... go.`,
+          prompt: {
+            prompt: prompt + `\n\nIMPORTANT: Start the debate by saying: "Welcome to Joute Verbale. The motion before us today is: '${topic}'. You will be arguing ${userSide}. You have 3 rounds to make your case. Take a moment to collect your thoughts... and... go."`,
+          },
         },
       },
     });
