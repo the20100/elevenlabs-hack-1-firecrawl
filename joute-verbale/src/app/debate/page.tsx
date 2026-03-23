@@ -71,6 +71,9 @@ function DebateContent() {
     clientTools: {
       firecrawl_search: firecrawlSearch,
     },
+    onConnect: () => {
+      console.log("ElevenLabs connected");
+    },
     onMessage: (props: { message: string; source: "user" | "ai" }) => {
       setMessages((prev) => [
         ...prev,
