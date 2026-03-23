@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { useConversation } from "@11labs/react";
-import { buildDebatePrompt, type DebateMode } from "@/lib/debate-prompt";
+import { type DebateMode } from "@/lib/debate-prompt";
 import { getRandomSide, getRandomTopic } from "@/lib/topics";
 
 function DebateContent() {
@@ -106,17 +106,21 @@ function DebateContent() {
   const handleStart = useCallback(async () => {
     if (!agentId) return;
 
-    const prompt = buildDebatePrompt({ topic, userSide, mode });
+    const aiSide = userSide === "FOR" ? "AGAINST" : "FOR";
+    const switcherooInstructions =
+      mode === "switcheroo"
+        ? `ACTIVE — After Round 2, announce a side switch. You then argue ${userSide}, the user argues ${aiSide}.`
+        : "INACTIVE";
 
     await conversation.startSession({
       agentId,
       connectionType: "websocket",
-      overrides: {
-        agent: {
-          prompt: {
-            prompt: prompt + `\n\nIMPORTANT: Start the debate by saying: "Welcome to Joute Verbale. The motion before us today is: '${topic}'. You will be arguing ${userSide}. You have 3 rounds to make your case. Take a moment to collect your thoughts... and... go."`,
-          },
-        },
+      dynamicVariables: {
+        topic,
+        user_side: userSide,
+        ai_side: aiSide,
+        mode,
+        switcheroo_instructions: switcherooInstructions,
       },
     });
 
