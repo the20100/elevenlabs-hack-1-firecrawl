@@ -29,6 +29,9 @@ function DebateContent() {
   }, []);
 
   const [started, setStarted] = useState(false);
+  const [phase, setPhase] = useState<"pre-start" | "introduction" | "debate">(
+    "pre-start"
+  );
   const [messages, setMessages] = useState<
     { role: "user" | "ai"; text: string }[]
   >([]);
@@ -77,10 +80,16 @@ function DebateContent() {
     onDisconnect: () => {
       console.log("ElevenLabs disconnected");
       setStarted(false);
+      setPhase("pre-start");
     },
     onDebug: () => {},
     onAudio: () => {},
     onMessage: (props: { message: string; source: "user" | "ai" }) => {
+      // Transition from introduction to debate when the user speaks for the first time
+      if (props.source === "user") {
+        setPhase((prev) => (prev === "introduction" ? "debate" : prev));
+      }
+
       setMessages((prev) => [
         ...prev,
         { role: props.source, text: props.message },
@@ -135,6 +144,7 @@ function DebateContent() {
     });
 
     setStarted(true);
+    setPhase("introduction");
   }, [agentId, conversation, mode, topic, userSide]);
 
   const handleEnd = useCallback(async () => {
@@ -144,13 +154,19 @@ function DebateContent() {
       console.error("Failed to end session:", err);
     } finally {
       setStarted(false);
+      setPhase("pre-start");
     }
   }, [conversation]);
 
+  // Find the index of the first user message — everything before it is introduction.
+  const firstUserIdx = messages.findIndex((m) => m.role === "user");
+  const debateMessages =
+    firstUserIdx >= 0 ? messages.slice(firstUserIdx) : [];
   // Each debate round produces ~2 AI messages (acknowledgment + rebuttal).
-  // Dividing by 2 prevents setup/conversational messages from inflating the counter.
   const currentRound = Math.min(
-    Math.floor(messages.filter((m) => m.role === "ai").length / 2) + 1,
+    Math.floor(
+      debateMessages.filter((m) => m.role === "ai").length / 2
+    ) + 1,
     3
   );
 
@@ -194,17 +210,25 @@ function DebateContent() {
       {/* Round indicator */}
       {started && (
         <div className="flex gap-2 mb-6">
-          {[1, 2, 3].map((r) => (
-            <div
-              key={r}
-              className={`w-20 h-1.5 rounded-full transition-colors ${
-                r <= currentRound ? "bg-gold" : "bg-foreground/10"
-              }`}
-            />
-          ))}
-          <span className="ml-2 text-sm text-foreground/40">
-            Round {currentRound}/3
-          </span>
+          {phase === "introduction" ? (
+            <span className="text-sm text-gold/80 font-medium animate-pulse">
+              Introduction
+            </span>
+          ) : (
+            <>
+              {[1, 2, 3].map((r) => (
+                <div
+                  key={r}
+                  className={`w-20 h-1.5 rounded-full transition-colors ${
+                    r <= currentRound ? "bg-gold" : "bg-foreground/10"
+                  }`}
+                />
+              ))}
+              <span className="ml-2 text-sm text-foreground/40">
+                Round {currentRound}/3
+              </span>
+            </>
+          )}
         </div>
       )}
 
