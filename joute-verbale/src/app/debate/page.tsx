@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { useConversation } from "@11labs/react";
-import { type DebateMode, buildDebatePrompt } from "@/lib/debate-prompt";
+import { type DebateMode, buildDebatePrompt, TOTAL_ROUNDS } from "@/lib/debate-prompt";
 import { getRandomSide, getRandomTopic } from "@/lib/topics";
 
 function DebateContent() {
@@ -169,7 +169,7 @@ function DebateContent() {
     Math.floor(
       debateMessages.filter((m) => m.role === "ai").length / 2
     ) + 1,
-    3
+    TOTAL_ROUNDS
   );
 
   // Timer: reset on round change, tick down every second during debate phase
@@ -260,16 +260,16 @@ function DebateContent() {
               </span>
             ) : (
               <>
-                {[1, 2, 3].map((r) => (
+                {Array.from({ length: TOTAL_ROUNDS }, (_, i) => i + 1).map((r) => (
                   <div
                     key={r}
-                    className={`w-20 h-1.5 rounded-full transition-colors ${
+                    className={`w-10 h-1.5 rounded-full transition-colors ${
                       r <= currentRound ? "bg-gold" : "bg-foreground/10"
                     }`}
                   />
                 ))}
                 <span className="ml-2 text-sm text-foreground/40">
-                  Round {currentRound}/3
+                  Round {currentRound}/{TOTAL_ROUNDS}
                 </span>
               </>
             )}
