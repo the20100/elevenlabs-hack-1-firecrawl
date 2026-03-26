@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { useConversation } from "@11labs/react";
-import { type DebateMode, buildDebatePrompt, TOTAL_ROUNDS } from "@/lib/debate-prompt";
+import { type DebateMode, TOTAL_ROUNDS } from "@/lib/debate-prompt";
 import { getRandomSide, getRandomTopic } from "@/lib/topics";
 import DebugPanel, { type DebugEntry } from "@/components/DebugPanel";
 
@@ -150,30 +150,21 @@ function DebateContent() {
         ? `ACTIVE — After Round 2, announce a side switch. You then argue ${userSide}, the user argues ${aiSide}.`
         : "INACTIVE";
 
-    const prompt = buildDebatePrompt({ topic, userSide, mode });
-
     setDebugEntries([]);
-    addDebugEntry("PROMPT", prompt);
     addDebugEntry(
       "SYSTEM",
-      `Dynamic vars: topic="${topic}" user_side="${userSide}" ai_side="${aiSide}" mode="${mode}"`
+      `Dynamic vars: topic="${topic}" user_side="${userSide}" ai_side="${aiSide}" mode="${mode}" switcheroo="${switcherooInstructions}"`
     );
 
     await conversation.startSession({
       agentId,
       connectionType: "websocket",
-      overrides: {
-        agent: {
-          prompt: {
-            prompt,
-          },
-        },
-      },
       dynamicVariables: {
         topic,
         user_side: userSide,
         ai_side: aiSide,
         mode,
+        total_rounds: TOTAL_ROUNDS,
         switcheroo_instructions: switcherooInstructions,
       },
     });
