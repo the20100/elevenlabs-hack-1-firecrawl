@@ -46,6 +46,8 @@ function DebateContent() {
     title: string;
     verdict: string;
   } | null>(null);
+  const [roundTimeLeft, setRoundTimeLeft] = useState(120); // 2 minutes in seconds
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
 
@@ -170,6 +172,47 @@ function DebateContent() {
     3
   );
 
+  // Timer: reset on round change, tick down every second during debate phase
+  const prevRoundRef = useRef(0);
+  useEffect(() => {
+    if (phase === "debate" && started) {
+      // Reset timer when round changes
+      if (currentRound !== prevRoundRef.current) {
+        setRoundTimeLeft(120);
+        prevRoundRef.current = currentRound;
+      }
+      // Start ticking
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setRoundTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+    } else {
+      // Not in debate phase — clear timer
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [phase, started, currentRound]);
+
+  // Format time as M:SS
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  // Timer color classes based on remaining time
+  const timerColorClass =
+    roundTimeLeft <= 10
+      ? "text-red-400 animate-pulse"
+      : roundTimeLeft <= 30
+        ? "text-amber-400"
+        : "text-foreground/60";
+
   if (scores) {
     return <ScoreScreen scores={scores} topic={topic} userSide={userSide} />;
   }
@@ -207,27 +250,45 @@ function DebateContent() {
         </div>
       </div>
 
-      {/* Round indicator */}
+      {/* Round indicator + Timer */}
       {started && (
-        <div className="flex gap-2 mb-6">
-          {phase === "introduction" ? (
-            <span className="text-sm text-gold/80 font-medium animate-pulse">
-              Introduction
-            </span>
-          ) : (
-            <>
-              {[1, 2, 3].map((r) => (
-                <div
-                  key={r}
-                  className={`w-20 h-1.5 rounded-full transition-colors ${
-                    r <= currentRound ? "bg-gold" : "bg-foreground/10"
-                  }`}
-                />
-              ))}
-              <span className="ml-2 text-sm text-foreground/40">
-                Round {currentRound}/3
+        <div className="flex flex-col items-center gap-2 mb-6">
+          <div className="flex gap-2 items-center">
+            {phase === "introduction" ? (
+              <span className="text-sm text-gold/80 font-medium animate-pulse">
+                Introduction
               </span>
-            </>
+            ) : (
+              <>
+                {[1, 2, 3].map((r) => (
+                  <div
+                    key={r}
+                    className={`w-20 h-1.5 rounded-full transition-colors ${
+                      r <= currentRound ? "bg-gold" : "bg-foreground/10"
+                    }`}
+                  />
+                ))}
+                <span className="ml-2 text-sm text-foreground/40">
+                  Round {currentRound}/3
+                </span>
+              </>
+            )}
+          </div>
+          {/* Countdown timer */}
+          {phase === "debate" && (
+            <div className={`font-mono text-2xl font-bold tabular-nums ${timerColorClass} transition-colors`}>
+              {formatTime(roundTimeLeft)}
+              {roundTimeLeft <= 10 && roundTimeLeft > 0 && (
+                <span className="ml-2 text-xs font-normal text-red-400/80">
+                  Time&apos;s almost up!
+                </span>
+              )}
+              {roundTimeLeft === 0 && (
+                <span className="ml-2 text-xs font-normal text-red-400">
+                  Time&apos;s up!
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
