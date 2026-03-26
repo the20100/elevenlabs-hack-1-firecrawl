@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     },
     body: JSON.stringify({
       query,
-      limit: 5,
+      limit: 8,
       scrapeOptions: { formats: ["markdown"] },
     }),
   });
@@ -45,8 +45,8 @@ export async function POST(request: NextRequest) {
       title: item.title || "",
       url: item.url || "",
       snippet:
-        (item.markdown || "").slice(0, 500) +
-        ((item.markdown || "").length > 500 ? "..." : ""),
+        (item.markdown || "").slice(0, 800) +
+        ((item.markdown || "").length > 800 ? "..." : ""),
     })
   );
 
