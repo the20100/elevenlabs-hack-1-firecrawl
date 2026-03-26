@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { useConversation } from "@11labs/react";
-import { type DebateMode } from "@/lib/debate-prompt";
+import { type DebateMode, buildDebatePrompt } from "@/lib/debate-prompt";
 import { getRandomSide, getRandomTopic } from "@/lib/topics";
 
 function DebateContent() {
@@ -76,6 +76,7 @@ function DebateContent() {
     },
     onDisconnect: () => {
       console.log("ElevenLabs disconnected");
+      setStarted(false);
     },
     onDebug: () => {},
     onAudio: () => {},
@@ -112,9 +113,18 @@ function DebateContent() {
         ? `ACTIVE — After Round 2, announce a side switch. You then argue ${userSide}, the user argues ${aiSide}.`
         : "INACTIVE";
 
+    const prompt = buildDebatePrompt({ topic, userSide, mode });
+
     await conversation.startSession({
       agentId,
       connectionType: "websocket",
+      overrides: {
+        agent: {
+          prompt: {
+            prompt,
+          },
+        },
+      },
       dynamicVariables: {
         topic,
         user_side: userSide,
@@ -128,11 +138,19 @@ function DebateContent() {
   }, [agentId, conversation, mode, topic, userSide]);
 
   const handleEnd = useCallback(async () => {
-    await conversation.endSession();
+    try {
+      await conversation.endSession();
+    } catch (err) {
+      console.error("Failed to end session:", err);
+    } finally {
+      setStarted(false);
+    }
   }, [conversation]);
 
+  // Each debate round produces ~2 AI messages (acknowledgment + rebuttal).
+  // Dividing by 2 prevents setup/conversational messages from inflating the counter.
   const currentRound = Math.min(
-    Math.floor(messages.filter((m) => m.role === "ai").length / 1) + 1,
+    Math.floor(messages.filter((m) => m.role === "ai").length / 2) + 1,
     3
   );
 
