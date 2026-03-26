@@ -87,6 +87,9 @@ function DebateContent() {
         return "Search temporarily unavailable";
       } finally {
         setIsSearching(false);
+        // Transition to debate phase after the AI's opening search completes
+        // (the AI searches during its opening argument before the user speaks)
+        setPhase((prev) => (prev === "introduction" ? "debate" : prev));
       }
     },
     [addDebugEntry]
