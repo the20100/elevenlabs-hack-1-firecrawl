@@ -156,9 +156,16 @@ function DebateContent() {
       `Dynamic vars: topic="${topic}" user_side="${userSide}" ai_side="${aiSide}" mode="${mode}" switcheroo="${switcherooInstructions}"`
     );
 
+    const firstMessage = `Welcome to Joute Verbale! The motion before us today is: "${topic}." Arguing ${userSide} the motion: our challenger. Arguing ${aiSide}: myself. We will have ${TOTAL_ROUNDS} rounds of debate. Each round, you will present your argument, and I will respond with evidence-backed rebuttals. Round 1 begins now. You have a few seconds to collect your thoughts... Go.`;
+
     await conversation.startSession({
       agentId,
       connectionType: "websocket",
+      overrides: {
+        agent: {
+          firstMessage,
+        },
+      },
       dynamicVariables: {
         topic,
         user_side: userSide,
