@@ -12,6 +12,7 @@ import {
 import { useConversation } from "@11labs/react";
 import { type DebateMode, buildDebatePrompt, TOTAL_ROUNDS } from "@/lib/debate-prompt";
 import { getRandomSide, getRandomTopic } from "@/lib/topics";
+import DebugPanel, { type DebugEntry } from "@/components/DebugPanel";
 
 function DebateContent() {
   const searchParams = useSearchParams();
@@ -48,12 +49,25 @@ function DebateContent() {
   } | null>(null);
   const [roundTimeLeft, setRoundTimeLeft] = useState(120); // 2 minutes in seconds
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([]);
+  const [debugOpen, setDebugOpen] = useState(false);
+
+  const addDebugEntry = useCallback(
+    (type: DebugEntry["type"], content: string) => {
+      setDebugEntries((prev) => [
+        ...prev,
+        { timestamp: new Date(), type, content },
+      ]);
+    },
+    []
+  );
 
   const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
 
   const firecrawlSearch = useCallback(
     async (parameters: { query: string }): Promise<string> => {
       setIsSearching(true);
+      addDebugEntry("TOOL", `query: "${parameters.query}"`);
       try {
         const res = await fetch("/api/firecrawl-search", {
           method: "POST",
@@ -61,15 +75,21 @@ function DebateContent() {
           body: JSON.stringify({ query: parameters.query }),
         });
         const data = await res.json();
-        if (data.error) return `Search failed: ${data.error}`;
-        return JSON.stringify(data.results);
+        if (data.error) {
+          addDebugEntry("RESULT", `Error: ${data.error}`);
+          return `Search failed: ${data.error}`;
+        }
+        const result = JSON.stringify(data.results);
+        addDebugEntry("RESULT", result);
+        return result;
       } catch {
+        addDebugEntry("RESULT", "Search temporarily unavailable");
         return "Search temporarily unavailable";
       } finally {
         setIsSearching(false);
       }
     },
-    []
+    [addDebugEntry]
   );
 
   const conversation = useConversation({
@@ -78,15 +98,21 @@ function DebateContent() {
     },
     onConnect: () => {
       console.log("ElevenLabs connected");
+      addDebugEntry("SYSTEM", "Connected to ElevenLabs");
     },
     onDisconnect: () => {
       console.log("ElevenLabs disconnected");
+      addDebugEntry("SYSTEM", "Disconnected from ElevenLabs");
       setStarted(false);
       setPhase("pre-start");
     },
     onDebug: () => {},
     onAudio: () => {},
     onMessage: (props: { message: string; source: "user" | "ai" }) => {
+      addDebugEntry(
+        props.source === "ai" ? "AI" : "USER",
+        props.message
+      );
       // Transition from introduction to debate when the user speaks for the first time
       if (props.source === "user") {
         setPhase((prev) => (prev === "introduction" ? "debate" : prev));
@@ -126,6 +152,13 @@ function DebateContent() {
 
     const prompt = buildDebatePrompt({ topic, userSide, mode });
 
+    setDebugEntries([]);
+    addDebugEntry("PROMPT", prompt);
+    addDebugEntry(
+      "SYSTEM",
+      `Dynamic vars: topic="${topic}" user_side="${userSide}" ai_side="${aiSide}" mode="${mode}"`
+    );
+
     await conversation.startSession({
       agentId,
       connectionType: "websocket",
@@ -147,7 +180,7 @@ function DebateContent() {
 
     setStarted(true);
     setPhase("introduction");
-  }, [agentId, conversation, mode, topic, userSide]);
+  }, [agentId, conversation, mode, topic, userSide, addDebugEntry]);
 
   const handleEnd = useCallback(async () => {
     try {
@@ -219,6 +252,12 @@ function DebateContent() {
 
   return (
     <div className="flex flex-1 flex-col items-center px-6 py-8">
+      <DebugPanel
+        entries={debugEntries}
+        isOpen={debugOpen}
+        onToggle={() => setDebugOpen((o) => !o)}
+      />
+
       {/* Topic banner */}
       <div className="w-full max-w-2xl text-center mb-8">
         <div className="text-sm uppercase tracking-widest text-gold/60 mb-2">
