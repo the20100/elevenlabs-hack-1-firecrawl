@@ -21,7 +21,7 @@ function DebateContent() {
   const sideParam = searchParams.get("side") as "FOR" | "AGAINST" | null;
 
   const { topic, userSide } = useMemo(() => {
-    if (mode === "champion" && topicParam && sideParam) {
+    if (topicParam && sideParam) {
       return { topic: topicParam, userSide: sideParam };
     }
     const randomTopic = getRandomTopic();
