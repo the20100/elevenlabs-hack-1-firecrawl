@@ -6,6 +6,8 @@ const PER_IP_LIMIT = 10;
 const GLOBAL_LIMIT = 40;
 const DAILY_LIMIT = 500;
 
+type FirecrawlItem = { title?: string; url?: string; markdown?: string };
+
 // Per-instance counters. Serverless instances are not shared, so this is a
 // burn-rate ceiling rather than an exact quota -- but a sustained drain keeps
 // one instance warm, which is exactly when the ceiling needs to hold.
@@ -124,19 +126,39 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const res = await fetch("https://api.firecrawl.dev/v1/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      query,
-      limit: 8,
-      scrapeOptions: { formats: ["markdown"] },
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
+  // The upstream call is the only part of this handler that can reject: the 30s
+  // timeout above aborts it, and a search that scrapes 8 pages does occasionally
+  // run long -- a legitimate query measured 9.8s. Uncaught, that abort escapes as
+  // an unhandledRejection and the route answers with an empty 500 instead of
+  // JSON, on an ordinary search with no attacker involved. That is the reason
+  // this catch exists. Secondary: on a serverless instance an unhandled rejection
+  // can take the instance down, and the counters above live in that instance, so
+  // they reset with it. They are a burn-rate limiter, not the spend ceiling --
+  // the ceiling is the non-renewing credit balance -- but a limiter that a slow
+  // upstream can zero is not doing the one job it has.
+  let res: Response;
+  try {
+    res = await fetch("https://api.firecrawl.dev/v1/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query,
+        limit: 8,
+        scrapeOptions: { formats: ["markdown"] },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    console.error("Firecrawl search unreachable:", err);
+    return Response.json(
+      { error: timedOut ? "Search timed out" : "Search is unavailable" },
+      { status: timedOut ? 504 : 502 }
+    );
+  }
 
   if (!res.ok) {
     const errorText = await res.text();
@@ -147,11 +169,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const data = await res.json();
+  let data: { data?: FirecrawlItem[] };
+  try {
+    data = await res.json();
+  } catch (err) {
+    console.error("Firecrawl search returned non-JSON:", err);
+    return Response.json({ error: "Search is unavailable" }, { status: 502 });
+  }
 
   // Extract the most useful parts for the AI
   const results = (data.data || []).map(
-    (item: { title?: string; url?: string; markdown?: string }) => ({
+    (item: FirecrawlItem) => ({
       title: item.title || "",
       url: item.url || "",
       snippet:
