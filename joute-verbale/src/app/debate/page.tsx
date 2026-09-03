@@ -62,7 +62,13 @@ function DebateContent() {
     []
   );
 
-  const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
+  // Trimmed: the Vercel Production value was created with a trailing newline
+  // (`echo` instead of `printf`), which Next inlines verbatim into the client
+  // bundle. Today it only reaches a WSS URL, where the WHATWG parser strips it
+  // — but it would break the first time this ID lands in a header, a JSON body,
+  // a path segment, or an equality check. Trim at the read site so the value is
+  // correct regardless of what the env var holds.
+  const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID?.trim();
 
   const firecrawlSearch = useCallback(
     async (parameters: { query: string }): Promise<string> => {
