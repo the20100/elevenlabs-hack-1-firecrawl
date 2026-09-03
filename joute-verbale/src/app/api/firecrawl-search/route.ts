@@ -110,7 +110,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const apiKey = process.env.FIRECRAWL_API_KEY;
+  // Trimmed for the same reason as the agent ID in src/app/debate/page.tsx: the
+  // Vercel Production value carries a trailing newline. Fetch's header-value
+  // normalization currently strips it, so this works today — but a whitespace
+  // difference in a bearer token is not something to leave to a spec detail.
+  // Trimming at the read site also makes a whitespace-only value fall into the
+  // `!apiKey` branch below rather than sending an empty bearer token.
+  const apiKey = process.env.FIRECRAWL_API_KEY?.trim();
   if (!apiKey) {
     return Response.json(
       { error: "Firecrawl API key not configured" },
@@ -122,7 +128,7 @@ export async function POST(request: NextRequest) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey.trim()}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       query,
