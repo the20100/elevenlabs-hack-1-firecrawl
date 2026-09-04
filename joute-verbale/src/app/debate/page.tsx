@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   Suspense,
@@ -13,6 +14,11 @@ import { useConversation } from "@11labs/react";
 import { type DebateMode, TOTAL_ROUNDS } from "@/lib/debate-prompt";
 import { getRandomSide, getRandomTopic } from "@/lib/topics";
 import DebugPanel, { type DebugEntry } from "@/components/DebugPanel";
+
+// How long to leave the session open after the verdict transcript arrives, so
+// the agent can finish speaking it. Generous on purpose: the cost of being too
+// short is a truncated verdict, the cost of being too long is a few cents.
+const VERDICT_GRACE_MS = 45_000;
 
 function DebateContent() {
   const searchParams = useSearchParams();
@@ -200,6 +206,24 @@ function DebateContent() {
       setPhase("pre-start");
     }
   }, [conversation]);
+
+  // Close the metered session once the verdict has landed. The agent has no
+  // end_call tool, and the score screen below is an early return out of this
+  // same component, so useConversation stays mounted and the ElevenLabs session
+  // stays open — billing per minute — until the user navigates away or closes
+  // the tab. That is exactly when a user lingers, reading their score.
+  //
+  // The delay is not cosmetic: SCORES_JSON arrives on the transcript, which runs
+  // ahead of the audio still being spoken. Ending on arrival would cut the agent
+  // off mid-verdict. Waiting bounds the idle session instead of eliminating it,
+  // which is the right trade against truncating the one line users came for.
+  useEffect(() => {
+    if (!scores) return;
+    const timer = setTimeout(() => {
+      void handleEnd();
+    }, VERDICT_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [scores, handleEnd]);
 
   // Find the index of the first user message — everything before it is introduction.
   const firstUserIdx = messages.findIndex((m) => m.role === "user");
@@ -597,12 +621,12 @@ function ScoreScreen({
             transition: "opacity 0.4s ease 1.8s",
           }}
         >
-          <a
+          <Link
             href="/"
             className="rounded-lg border border-foreground/20 bg-foreground/5 px-5 py-2.5 text-sm text-foreground/60 hover:bg-foreground/10 transition-colors"
           >
             New Debate
-          </a>
+          </Link>
           <button
             onClick={handleShare}
             className="rounded-lg border border-gold/30 bg-gold/10 px-5 py-2.5 text-sm font-medium text-gold hover:bg-gold/20 transition-colors flex items-center gap-2"
