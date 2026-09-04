@@ -6,7 +6,12 @@ const PER_IP_LIMIT = 10;
 const GLOBAL_LIMIT = 40;
 const DAILY_LIMIT = 500;
 
-type FirecrawlItem = { title?: string; url?: string; markdown?: string };
+type FirecrawlItem = {
+  title?: string;
+  url?: string;
+  description?: string;
+  markdown?: string;
+};
 
 // Per-instance counters. Serverless instances are not shared, so this is a
 // burn-rate ceiling rather than an exact quota -- but a sustained drain keeps
@@ -126,9 +131,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // The upstream call is the only part of this handler that can reject: the 30s
-  // timeout above aborts it, and a search that scrapes 8 pages does occasionally
-  // run long -- a legitimate query measured 9.8s. Uncaught, that abort escapes as
+  // The upstream call is the only part of this handler that can reject: the
+  // timeout below aborts it, and an upstream that stalls will hit it.
+  // Uncaught, that abort escapes as
   // an unhandledRejection and the route answers with an empty 500 instead of
   // JSON, on an ordinary search with no attacker involved. That is the reason
   // this catch exists. Secondary: on a serverless instance an unhandled rejection
@@ -144,12 +149,24 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        query,
-        limit: 8,
-        scrapeOptions: { formats: ["markdown"] },
-      }),
-      signal: AbortSignal.timeout(30_000),
+      // No `scrapeOptions`. This is a *blocking client tool* inside a live voice
+      // debate -- the agent cannot speak until it resolves -- so latency is the
+      // binding constraint, not depth. Asking Firecrawl to scrape all 8 result
+      // pages to markdown measured 21.1s in production; search-only measures
+      // 1.3s for the same query. 21s of dead air mid-round is a worse failure
+      // than a thinner snippet, and the snippet is not actually thinner: see the
+      // `description` note below.
+      //
+      // Cost falls with it. Firecrawl bills search at 2 credits/10 results and
+      // scraping at 1 credit *per page* on top, so this drops 10 credits per
+      // search to 2 -- which also shrinks the paid-call exposure behind the
+      // ELE-29 guard by 5x.
+      body: JSON.stringify({ query, limit: 8 }),
+      // 15s, down from 30s. Measured search-only latency is 1.3s, so this is
+      // ~11x headroom, while a round is only 120s. Past ~15s the conversation is
+      // already dead; failing fast lets the agent say it found nothing and keep
+      // talking, which beats stalling for the rest of the round.
+      signal: AbortSignal.timeout(15_000),
     });
   } catch (err) {
     const timedOut = err instanceof Error && err.name === "TimeoutError";
@@ -177,16 +194,26 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Search is unavailable" }, { status: 502 });
   }
 
-  // Extract the most useful parts for the AI
-  const results = (data.data || []).map(
-    (item: FirecrawlItem) => ({
+  // Extract the most useful parts for the AI.
+  //
+  // `description` is the search engine's query-matched snippet, so it tends to
+  // carry the claim the agent actually asked about -- measured examples: "Its
+  // death rate since 1965 is 1.3 deaths per TWh". The previous
+  // `markdown.slice(0, 800)` took the first 800 characters of the *scraped
+  // page*, which is nav, cookie banners and headers far more often than it is
+  // the relevant passage. So dropping the scrape costs less grounding than it
+  // looks like -- it usually gains some.
+  //
+  // `markdown` stays as a fallback purely so that re-enabling `scrapeOptions`
+  // later cannot silently produce empty snippets.
+  const results = (data.data || []).map((item: FirecrawlItem) => {
+    const text = (item.description || item.markdown || "").trim();
+    return {
       title: item.title || "",
       url: item.url || "",
-      snippet:
-        (item.markdown || "").slice(0, 800) +
-        ((item.markdown || "").length > 800 ? "..." : ""),
-    })
-  );
+      snippet: text.slice(0, 800) + (text.length > 800 ? "..." : ""),
+    };
+  });
 
   return Response.json({ results });
 }
